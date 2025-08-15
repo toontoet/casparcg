@@ -404,9 +404,50 @@ class html_client
     void do_execute_javascript(const std::wstring& javascript)
     {
         html::begin_invoke([=] {
-            if (browser_ != nullptr)
-                browser_->GetMainFrame()->ExecuteJavaScript(
-                    u8(javascript).c_str(), browser_->GetMainFrame()->GetURL(), 0);
+            try {
+                if (browser_ != nullptr && browser_->GetMainFrame() != nullptr) {
+                    // Safe UTF-8 conversion with error handling
+                    std::string utf8_javascript;
+                    try {
+                        utf8_javascript = u8(javascript);
+                    } catch (...) {
+                        // If UTF-8 conversion fails, clean the string and try again
+                        std::wstring cleaned_js;
+                        for (wchar_t c : javascript) {
+                            if (c < 128) {
+                                // Keep ASCII characters
+                                cleaned_js += c;
+                            } else if (c >= 128 && c <= 0xFFFF) {
+                                // Try to keep valid Unicode characters
+                                cleaned_js += c;
+                            } else {
+                                // Replace problematic characters
+                                cleaned_js += L'?';
+                            }
+                        }
+                        
+                        try {
+                            utf8_javascript = u8(cleaned_js);
+                        } catch (...) {
+                            // Final fallback: ASCII only
+                            for (wchar_t c : javascript) {
+                                if (c < 128) {
+                                    utf8_javascript += static_cast<char>(c);
+                                } else {
+                                    utf8_javascript += '?';
+                                }
+                            }
+                        }
+                    }
+                    
+                    browser_->GetMainFrame()->ExecuteJavaScript(
+                        utf8_javascript.c_str(), browser_->GetMainFrame()->GetURL(), 0);
+                }
+            } catch (const std::exception& e) {
+                CASPAR_LOG(error) << print() << L" JavaScript execution failed: " << caspar::u16(e.what());
+            } catch (...) {
+                CASPAR_LOG(error) << print() << L" JavaScript execution failed with unknown error";
+            }
         });
     }
 
