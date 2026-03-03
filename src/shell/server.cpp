@@ -384,6 +384,22 @@ struct server::impl
 
             auto xml_channel = xml_channels.at(channel.raw_channel->index() - 1);
 
+            // StereoTool audio processing
+            if (auto st_node = xml_channel.get_child_optional(L"stereotool")) {
+                try {
+                    auto preset = u8(st_node->get<std::wstring>(L"preset", L""));
+                    auto key    = u8(st_node->get<std::wstring>(L"key", L""));
+                    auto lib    = u8(st_node->get<std::wstring>(L"lib", L"libStereoTool_intel64.so"));
+                    if (!preset.empty()) {
+                        channel.raw_channel->mixer().set_stereotool(lib, preset, key);
+                        CASPAR_LOG(info) << "StereoTool enabled on channel " << channel.raw_channel->index()
+                                         << " with preset: " << preset;
+                    }
+                } catch (...) {
+                    CASPAR_LOG_CURRENT_EXCEPTION();
+                }
+            }
+
             // Consumers
             if (xml_channel.get_child_optional(L"consumers")) {
                 for (auto& xml_consumer : xml_channel | witerate_children(L"consumers") | welement_context_iteration) {

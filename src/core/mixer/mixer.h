@@ -27,6 +27,8 @@
 #include <core/fwd.h>
 #include <core/monitor/monitor.h>
 
+#include <string>
+
 namespace caspar::diagnostics {
 class graph;
 }
@@ -47,6 +49,13 @@ class mixer final
 
     void  set_master_volume(float volume);
     float get_master_volume();
+
+    void set_stereotool(const std::string& lib_path,
+                        const std::string& preset_path,
+                        const std::string& license_key = "");
+    void clear_stereotool();
+    bool has_stereotool() const;
+    int  get_stereotool_latency_samples() const;
 
     mutable_frame create_frame(const void* tag, const pixel_format_desc& desc);
 

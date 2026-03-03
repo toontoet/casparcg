@@ -22,6 +22,7 @@
 #include "../../StdAfx.h"
 
 #include "audio_mixer.h"
+#include "stereotool_processor.h"
 
 #include <core/frame/frame.h>
 #include <core/frame/frame_transform.h>
@@ -34,6 +35,8 @@
 
 #include <atomic>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <stack>
 #include <vector>
 
@@ -65,6 +68,9 @@ struct audio_mixer::impl
     bool                                        has_variable_cadence_{false};
     std::vector<int32_t>                        silence_buffer_;
     int                                         channels_{0};
+    mutable std::mutex                           stereotool_mutex_;
+    std::shared_ptr<stereotool_processor>        stereotool_;
+    std::atomic<int>                             stereotool_latency_{0};
 
     impl(spl::shared_ptr<diagnostics::graph> graph)
         : graph_(std::move(graph))
@@ -96,6 +102,41 @@ struct audio_mixer::impl
     void set_master_volume(float volume) { master_volume_ = volume; }
 
     float get_master_volume() { return master_volume_; }
+
+    void set_stereotool(const std::string& lib_path,
+                        const std::string& preset_path,
+                        const std::string& license_key)
+    {
+        auto new_st = std::make_shared<stereotool_processor>(lib_path, license_key);
+        if (!new_st->load_preset(preset_path)) {
+            CASPAR_THROW_EXCEPTION(caspar_exception()
+                                   << msg_info("StereoTool: failed to load preset " + preset_path));
+        }
+        int latency = 0;
+        if (format_desc_.audio_sample_rate > 0) {
+            latency = new_st->get_latency(format_desc_.audio_sample_rate);
+            CASPAR_LOG(info) << "[stereotool] Processing latency: " << latency << " samples ("
+                             << (static_cast<double>(latency) / format_desc_.audio_sample_rate * 1000.0) << " ms)";
+        }
+        stereotool_latency_.store(latency);
+        std::lock_guard<std::mutex> lock(stereotool_mutex_);
+        stereotool_ = std::move(new_st);
+    }
+
+    void clear_stereotool()
+    {
+        stereotool_latency_.store(0);
+        std::lock_guard<std::mutex> lock(stereotool_mutex_);
+        stereotool_.reset();
+    }
+
+    bool has_stereotool() const
+    {
+        std::lock_guard<std::mutex> lock(stereotool_mutex_);
+        return stereotool_ != nullptr;
+    }
+
+    int get_stereotool_latency_samples() const { return stereotool_latency_.load(); }
 
     array<const int32_t> mix(const video_format_desc& format_desc, int nb_samples)
     {
@@ -250,6 +291,17 @@ struct audio_mixer::impl
             }
         }
 
+        {
+            std::shared_ptr<stereotool_processor> st;
+            {
+                std::lock_guard<std::mutex> lock(stereotool_mutex_);
+                st = stereotool_;
+            }
+            if (st) {
+                st->process(result.data(), nb_samples, channels_, format_desc.audio_sample_rate);
+            }
+        }
+
         auto max = std::vector<int32_t>(channels_, std::numeric_limits<int32_t>::min());
         for (size_t n = 0; n < result.size(); n += channels_) {
             for (int ch = 0; ch < channels_; ++ch) {
@@ -279,6 +331,15 @@ void                 audio_mixer::visit(const const_frame& frame) { impl_->visit
 void                 audio_mixer::pop() { impl_->pop(); }
 void                 audio_mixer::set_master_volume(float volume) { impl_->set_master_volume(volume); }
 float                audio_mixer::get_master_volume() { return impl_->get_master_volume(); }
+void audio_mixer::set_stereotool(const std::string& lib_path,
+                                  const std::string& preset_path,
+                                  const std::string& license_key)
+{
+    impl_->set_stereotool(lib_path, preset_path, license_key);
+}
+void audio_mixer::clear_stereotool() { impl_->clear_stereotool(); }
+bool audio_mixer::has_stereotool() const { return impl_->has_stereotool(); }
+int  audio_mixer::get_stereotool_latency_samples() const { return impl_->get_stereotool_latency_samples(); }
 array<const int32_t> audio_mixer::operator()(const video_format_desc& format_desc, int nb_samples)
 {
     return impl_->mix(format_desc, nb_samples);

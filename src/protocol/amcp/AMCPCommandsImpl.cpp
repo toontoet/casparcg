@@ -1348,6 +1348,27 @@ std::wstring mixer_mastervolume_command(command_context& ctx)
     return L"202 MIXER OK\r\n";
 }
 
+std::wstring mixer_stereotool_command(command_context& ctx)
+{
+    if (ctx.parameters.empty()) {
+        bool active = ctx.channel.raw_channel->mixer().has_stereotool();
+        return L"201 MIXER OK\r\n" + std::wstring(active ? L"1" : L"0") + L"\r\n";
+    }
+
+    auto preset_path = u8(ctx.parameters.at(0));
+    if (preset_path.empty()) {
+        ctx.channel.raw_channel->mixer().clear_stereotool();
+        CASPAR_LOG(info) << "StereoTool processing disabled on channel " << ctx.channel.raw_channel->index();
+        return L"202 MIXER OK\r\n";
+    }
+
+    auto lib_path = ctx.parameters.size() > 2 ? u8(ctx.parameters.at(2)) : std::string("libStereoTool_intel64.so");
+    auto key      = ctx.parameters.size() > 1 ? u8(ctx.parameters.at(1)) : std::string("");
+    ctx.channel.raw_channel->mixer().set_stereotool(lib_path, preset_path, key);
+
+    return L"202 MIXER OK\r\n";
+}
+
 std::wstring mixer_grid_command(command_context& ctx)
 {
     transforms_applier transforms(ctx);
@@ -1788,6 +1809,7 @@ void register_commands(std::shared_ptr<amcp_command_repository_wrapper>& repo)
     repo->register_channel_command(L"Mixer Commands", L"MIXER PERSPECTIVE", mixer_perspective_command, 0);
     repo->register_channel_command(L"Mixer Commands", L"MIXER VOLUME", mixer_volume_command, 0);
     repo->register_channel_command(L"Mixer Commands", L"MIXER MASTERVOLUME", mixer_mastervolume_command, 0);
+    repo->register_channel_command(L"Mixer Commands", L"MIXER STEREOTOOL", mixer_stereotool_command, 0);
     repo->register_channel_command(L"Mixer Commands", L"MIXER GRID", mixer_grid_command, 1);
     repo->register_channel_command(L"Mixer Commands", L"MIXER COMMIT", mixer_commit_command, 0);
     repo->register_channel_command(L"Mixer Commands", L"MIXER CLEAR", mixer_clear_command, 0);

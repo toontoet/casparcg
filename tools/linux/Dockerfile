@@ -32,6 +32,9 @@ FROM docker.io/buildpack-deps:noble AS build-casparcg
 FROM docker.io/ubuntu:noble
 	COPY --from=build-casparcg /staging /opt/casparcg
 
+	# StereoTool audio processing library (optional)
+	COPY test/libStereoTool_1075/lib/Linux/IntelAMD/64/libStereoTool_intel64.so /opt/casparcg/lib/
+
 	RUN set -ex; \
 			apt-get update; \
 			DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
@@ -46,6 +49,8 @@ FROM docker.io/ubuntu:noble
 			libgles2 \
 			; \
 			rm -rf /var/lib/apt/lists/*
+
+	ENV LD_LIBRARY_PATH="/opt/casparcg/lib:${LD_LIBRARY_PATH}"
 
 	WORKDIR /opt/casparcg
 	RUN chmod 755 run.sh

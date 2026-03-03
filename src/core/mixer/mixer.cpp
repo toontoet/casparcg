@@ -35,6 +35,7 @@
 #include <core/frame/pixel_format.h>
 #include <core/video_format.h>
 
+#include <cmath>
 #include <queue>
 #include <unordered_map>
 #include <vector>
@@ -49,6 +50,14 @@ struct mixer::impl
     audio_mixer                          audio_mixer_{graph_};
     spl::shared_ptr<image_mixer>         image_mixer_;
     std::queue<std::future<const_frame>> buffer_;
+
+    struct delayed_video
+    {
+        std::future<std::tuple<array<const std::uint8_t>, std::shared_ptr<texture>>> result;
+        common::bit_depth                                                            depth;
+        video_format_desc                                                            format_desc;
+    };
+    std::queue<delayed_video> video_delay_buf_;
 
     impl(const impl&)            = delete;
     impl& operator=(const impl&) = delete;
@@ -71,28 +80,55 @@ struct mixer::impl
             frame.accept(*image_mixer_);
         }
 
-        auto result = image_mixer_->render(format_desc);
-        auto audio  = audio_mixer_(format_desc, nb_samples);
+        auto video_future = image_mixer_->render(format_desc);
+        auto audio        = audio_mixer_(format_desc, nb_samples);
 
         state_["audio"] = audio_mixer_.state();
 
         auto depth = image_mixer_->depth();
 
-        buffer_.push(std::async(
-            std::launch::deferred,
-            [result = std::move(result),
-             audio  = std::move(audio),
-             graph  = graph_,
-             depth,
-             format_desc,
-             tag = this]() mutable {
-                auto desc = pixel_format_desc(pixel_format::bgra);
-                desc.planes.push_back(pixel_format_desc::plane(format_desc.width, format_desc.height, 4, depth));
-                std::vector<array<const uint8_t>> image_data;
-                auto                              tuple = std::move(result.get());
-                image_data.emplace_back(std::move(std::get<0>(tuple)));
-                return const_frame(tag, std::move(image_data), std::move(audio), desc, std::move(std::get<1>(tuple)));
+        int delay_frames = 0;
+        int latency      = audio_mixer_.get_stereotool_latency_samples();
+        if (latency > 0) {
+            double samples_per_frame =
+                static_cast<double>(format_desc.audio_sample_rate) / format_desc.hz;
+            delay_frames = static_cast<int>(std::ceil(static_cast<double>(latency) / samples_per_frame));
+        }
+
+        video_delay_buf_.push({std::move(video_future), depth, format_desc});
+
+        // Drain excess entries when delay decreases (e.g. StereoTool disabled)
+        while (static_cast<int>(video_delay_buf_.size()) > delay_frames + 1) {
+            video_delay_buf_.pop();
+        }
+
+        if (static_cast<int>(video_delay_buf_.size()) <= delay_frames) {
+            // Still filling the delay buffer — output empty frame with current audio
+            buffer_.push(std::async(std::launch::deferred, [audio = std::move(audio)]() mutable {
+                return const_frame{};
             }));
+        } else {
+            auto delayed = std::move(video_delay_buf_.front());
+            video_delay_buf_.pop();
+
+            buffer_.push(std::async(
+                std::launch::deferred,
+                [result     = std::move(delayed.result),
+                 audio      = std::move(audio),
+                 graph      = graph_,
+                 depth      = delayed.depth,
+                 format_desc = delayed.format_desc,
+                 tag        = this]() mutable {
+                    auto desc = pixel_format_desc(pixel_format::bgra);
+                    desc.planes.push_back(
+                        pixel_format_desc::plane(format_desc.width, format_desc.height, 4, depth));
+                    std::vector<array<const uint8_t>> image_data;
+                    auto tuple = std::move(result.get());
+                    image_data.emplace_back(std::move(std::get<0>(tuple)));
+                    return const_frame(
+                        tag, std::move(image_data), std::move(audio), desc, std::move(std::get<1>(tuple)));
+                }));
+        }
 
         if (buffer_.size() <= format_desc.field_count) {
             return const_frame{};
@@ -106,6 +142,19 @@ struct mixer::impl
     void set_master_volume(float volume) { audio_mixer_.set_master_volume(volume); }
 
     float get_master_volume() { return audio_mixer_.get_master_volume(); }
+
+    void set_stereotool(const std::string& lib_path,
+                        const std::string& preset_path,
+                        const std::string& license_key)
+    {
+        audio_mixer_.set_stereotool(lib_path, preset_path, license_key);
+    }
+
+    void clear_stereotool() { audio_mixer_.clear_stereotool(); }
+
+    bool has_stereotool() const { return audio_mixer_.has_stereotool(); }
+
+    int get_stereotool_latency_samples() const { return audio_mixer_.get_stereotool_latency_samples(); }
 };
 
 mixer::mixer(int channel_index, spl::shared_ptr<diagnostics::graph> graph, spl::shared_ptr<image_mixer> image_mixer)
@@ -114,6 +163,15 @@ mixer::mixer(int channel_index, spl::shared_ptr<diagnostics::graph> graph, spl::
 }
 void        mixer::set_master_volume(float volume) { impl_->set_master_volume(volume); }
 float       mixer::get_master_volume() { return impl_->get_master_volume(); }
+void mixer::set_stereotool(const std::string& lib_path,
+                            const std::string& preset_path,
+                            const std::string& license_key)
+{
+    impl_->set_stereotool(lib_path, preset_path, license_key);
+}
+void mixer::clear_stereotool() { impl_->clear_stereotool(); }
+bool mixer::has_stereotool() const { return impl_->has_stereotool(); }
+int  mixer::get_stereotool_latency_samples() const { return impl_->get_stereotool_latency_samples(); }
 const_frame mixer::operator()(std::vector<draw_frame> frames, const video_format_desc& format_desc, int nb_samples)
 {
     return (*impl_)(std::move(frames), format_desc, nb_samples);

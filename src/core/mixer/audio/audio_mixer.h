@@ -29,6 +29,7 @@
 #include <core/video_format.h>
 
 #include <cstdint>
+#include <string>
 
 namespace caspar::diagnostics {
 class graph;
@@ -48,6 +49,13 @@ class audio_mixer final : public frame_visitor
     void                 set_master_volume(float volume);
     float                get_master_volume();
     core::monitor::state state() const;
+
+    void set_stereotool(const std::string& lib_path,
+                        const std::string& preset_path,
+                        const std::string& license_key = "");
+    void clear_stereotool();
+    bool has_stereotool() const;
+    int  get_stereotool_latency_samples() const;
 
     void push(const struct frame_transform& transform) override;
     void visit(const class const_frame& frame) override;
