@@ -50,7 +50,7 @@ FROM docker.io/ubuntu:noble
 			; \
 			rm -rf /var/lib/apt/lists/*
 
-	ENV LD_LIBRARY_PATH="/opt/casparcg/lib:${LD_LIBRARY_PATH}"
+	ENV LD_LIBRARY_PATH="/opt/casparcg/lib"
 
 	WORKDIR /opt/casparcg
 	RUN chmod 755 run.sh
