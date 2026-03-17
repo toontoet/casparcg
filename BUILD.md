@@ -80,7 +80,66 @@ features:
    ```
 3. Commit and push the config change to trigger a build.
 
-## Triggering a build
+## Local builds
+
+Use `build.sh` to build locally. This is **required** when the build uses
+proprietary files (like `libStereoTool`) that cannot be stored in git.
+
+### Prerequisites
+
+- **Docker Desktop** with buildx (comes with Docker Desktop for Mac)
+- **Python 3** (pre-installed on macOS)
+- **Git** with the `upstream` remote pointing to `CasparCG/server`
+
+### Quick start
+
+```bash
+# Build the image locally:
+./build.sh
+
+# See what would be merged, without building:
+./build.sh --dry-run
+
+# Build and push to the registry:
+docker login ghcr.io
+./build.sh --push
+```
+
+The script automatically:
+1. Reads `build-config.yml` from the `casparvc` branch
+2. Creates a temporary git worktree from upstream master
+3. Merges each enabled feature branch (in config order)
+4. Copies local-only files (listed under `local_files:` in the config)
+5. Runs `docker buildx build` for `linux/amd64`
+6. Tags the image with `latest` and `upstream-<sha>`
+7. Cleans up the temporary worktree
+
+### Local-only files
+
+Some features require proprietary binaries that cannot be stored in git (e.g.
+`libStereoTool`). List these in `build-config.yml`:
+
+```yaml
+local_files:
+  - test/libStereoTool_1075/lib/Linux/IntelAMD/64/libStereoTool_intel64.so
+```
+
+The build script copies these from your workspace into the Docker build
+context. If a file is missing, the script prints a warning and continues.
+
+### Overriding defaults
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REGISTRY` | `ghcr.io` | Docker registry |
+| `IMAGE` | `toontoet/casparcg` | Image name |
+| `PLATFORM` | `linux/amd64` | Target platform |
+
+```bash
+REGISTRY=my.registry.io IMAGE=myorg/casparcg ./build.sh --push
+```
+
+## CI builds (GitHub Actions)
 
 Builds are triggered automatically when:
 
@@ -90,6 +149,9 @@ Builds can also be triggered manually:
 
 1. Go to **Actions** → **Build Custom CasparCG** in the GitHub repository.
 2. Click **Run workflow** and select the `casparvc` branch.
+
+> **Note:** CI builds cannot access local-only files. Use `./build.sh` for
+> builds that include proprietary libraries.
 
 ## Merge conflicts
 
@@ -202,8 +264,10 @@ docker run --rm -it \
 
 ## Requirements
 
-- The fork repository must have **GitHub Packages** write access enabled
-  (default for `GITHUB_TOKEN` with `packages: write` permission).
+- **Docker Desktop** with buildx support (for local builds)
+- **Python 3** (for config parsing in `build.sh`)
 - Feature branches must be pushed to this fork (`origin`).
 - Feature branches should be regularly rebased onto upstream master to prevent
   merge conflicts.
+- For CI builds: the fork must have **GitHub Packages** write access enabled
+  (default for `GITHUB_TOKEN` with `packages: write` permission).

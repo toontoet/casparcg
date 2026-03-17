@@ -2,7 +2,8 @@
 #
 # This file controls which upstream base and feature branches
 # are merged into the custom build. Edit 'enabled' to toggle features.
-# Push changes to the casparvc branch to trigger a new build
+# Push changes to the casparvc branch to trigger a CI build,
+# or run ./build.sh to build locally.
 
 upstream:
   repo: CasparCG/server
@@ -39,3 +40,8 @@ features:
     description: >
       Prevent AMCP channel crash when CG UPDATE contains
       emoji or other non-ASCII Unicode characters.
+
+# Files that exist locally but are not stored in git (proprietary binaries).
+# The build script copies these into the Docker build context automatically.
+local_files:
+  - test/libStereoTool_1075/lib/Linux/IntelAMD/64/libStereoTool_intel64.so
