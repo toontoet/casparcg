@@ -1,0 +1,41 @@
+# CasparCG Custom Build Configuration
+#
+# This file controls which upstream base and feature branches
+# are merged into the custom build. Edit 'enabled' to toggle features.
+# Push changes to the casparvc branch to trigger a new build.
+
+upstream:
+  repo: CasparCG/server
+  branch: master
+
+fork:
+  repo: toontoet/casparcg
+
+features:
+  - name: FFmpeg Stream Reconnect
+    branch: feature/reconnect
+    enabled: true
+    description: >
+      Auto-reconnect streaming consumers (SRT/RTMP) on connection loss
+      with stepped exponential backoff.
+
+  - name: StereoTool Audio Processing
+    branch: feature/stereotool
+    enabled: true
+    description: >
+      Channel-level audio processing via libStereoTool, controllable
+      with MIXER STEREOTOOL command. Includes A/V sync compensation.
+
+  - name: Hardware Encoding (QSV/VAAPI)
+    branch: feature/hw-encoding-support
+    enabled: true
+    description: >
+      GPU-accelerated video encoding for FFmpeg stream consumers
+      using Intel QSV or VAAPI.
+
+  - name: Unicode fix for CG UPDATE
+    branch: fix/utf8-cg-update
+    enabled: true
+    description: >
+      Prevent AMCP channel crash when CG UPDATE contains
+      emoji or other non-ASCII Unicode characters.
