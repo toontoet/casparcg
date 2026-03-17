@@ -2,7 +2,7 @@
 #
 # This file controls which upstream base and feature branches
 # are merged into the custom build. Edit 'enabled' to toggle features.
-# Push changes to the casparvc branch to trigger a new build.
+# Push changes to the casparvc branch to trigger a new build
 
 upstream:
   repo: CasparCG/server
