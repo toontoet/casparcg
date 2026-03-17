@@ -93,21 +93,84 @@ Builds can also be triggered manually:
 
 ## Merge conflicts
 
-If a feature branch conflicts with upstream master (or another feature), the
-build will **fail** with a clear error message identifying the conflicting
-branch.
+Branches are merged **in the order listed** in `build-config.yml`. If a branch
+conflicts with upstream master or with a previously merged branch, the build
+will **fail** with a clear message identifying the conflicting branch.
 
-To fix:
+### Understanding the cause
+
+Conflicts happen when two branches modify the same section of the same file.
+Common scenarios:
+
+| Scenario | Example |
+|----------|---------|
+| Upstream changed a file your branch also edits | Upstream refactored `ffmpeg_consumer.cpp`, your branch adds code in the same area |
+| Two feature branches edit the same file | `feature/reconnect` restructures a function, `feature/hw-encoding` adds code to the same function |
+
+### Fixing a conflict with upstream
+
+If a branch conflicts with upstream master:
 
 ```bash
 git checkout feature/conflicting-branch
 git fetch upstream
 git rebase upstream/master
-# resolve conflicts
+# Git will pause at each conflict. Edit the files, then:
+git add <resolved-files>
+git rebase --continue
+# Repeat until rebase is complete, then force-push:
 git push --force-with-lease
 ```
 
-Then re-trigger the build.
+### Fixing a conflict between feature branches
+
+If branch B conflicts with branch A (which is listed earlier in the config),
+the easiest fix is to rebase B onto A:
+
+```bash
+git checkout feature/branch-B
+git fetch origin
+git rebase origin/feature/branch-A
+# Resolve conflicts, then:
+git add <resolved-files>
+git rebase --continue
+git push --force-with-lease
+```
+
+This makes B depend on A. As long as A is listed before B in
+`build-config.yml` and both are enabled, the merge will succeed.
+
+> **Note**: If you later disable branch A, branch B may fail to merge. Either
+> rebase B onto `upstream/master` directly, or re-enable A.
+
+### Verifying locally before pushing
+
+You can test the full merge sequence locally:
+
+```bash
+git fetch upstream && git fetch origin
+
+git checkout -b test-integration upstream/master
+
+# Merge each enabled branch in config order:
+git merge --no-edit origin/feature/reconnect
+git merge --no-edit origin/feature/stereotool
+git merge --no-edit origin/feature/hw-encoding-support
+git merge --no-edit origin/fix/utf8-cg-update
+
+# If all succeed, the integration is clean. Clean up:
+git checkout -
+git branch -D test-integration
+```
+
+### Tips
+
+- **Branch order matters.** If two branches touch the same file, list the one
+  with the larger structural changes first.
+- **Keep branches focused.** A branch that only touches one file is less likely
+  to conflict than one that touches ten.
+- **Rebase regularly.** After upstream merges new commits, rebase your feature
+  branches to stay close to master.
 
 ## Docker image tags
 
