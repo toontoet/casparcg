@@ -71,7 +71,9 @@ extern "C" {
 
 #include <memory>
 #include <optional>
+#include <set>
 #include <thread>
+#include <vector>
 
 namespace caspar { namespace ffmpeg {
 
@@ -532,12 +534,30 @@ struct ffmpeg_consumer : public core::frame_consumer
             try {
                 std::map<std::string, std::string> options;
                 {
-                    static boost::regex opt_exp("-(?<NAME>[^\\s]+)(\\s+(?<VALUE>[^\\s]+))?");
-                    for (auto it = boost::sregex_iterator(args_.begin(), args_.end(), opt_exp);
-                         it != boost::sregex_iterator();
-                         ++it) {
-                        options[(*it)["NAME"].str().c_str()] =
-                            (*it)["VALUE"].matched ? (*it)["VALUE"].str().c_str() : "";
+                    // FFmpeg-style boolean flags that never take a value. Listed here so that the
+                    // parser below does not accidentally consume the following token as their value
+                    // (e.g. "-vn -f mpegts" must yield {vn:"", f:"mpegts"}, not {vn:"-f"}).
+                    static const std::set<std::string> no_value_flags = {
+                        "vn", "an", "sn", "dn"
+                    };
+
+                    std::vector<std::string> tokens;
+                    boost::split(tokens, args_, boost::is_space(), boost::token_compress_on);
+
+                    for (std::size_t i = 0; i < tokens.size(); ++i) {
+                        const auto& tok = tokens[i];
+                        if (tok.size() < 2 || tok[0] != '-') {
+                            continue;
+                        }
+                        auto name = tok.substr(1);
+                        if (no_value_flags.count(name) > 0) {
+                            options[name] = "";
+                        } else if (i + 1 < tokens.size() && !tokens[i + 1].empty()) {
+                            options[name] = tokens[i + 1];
+                            ++i;
+                        } else {
+                            options[name] = "";
+                        }
                     }
                 }
 
@@ -595,8 +615,11 @@ struct ffmpeg_consumer : public core::frame_consumer
 
                 CASPAR_SCOPE_EXIT { avformat_free_context(oc); };
 
+                const bool disable_video = options.erase("vn") > 0;
+                const bool disable_audio = options.erase("an") > 0;
+
                 std::optional<Stream> video_stream;
-                if (oc->oformat->video_codec != AV_CODEC_ID_NONE) {
+                if (!disable_video && oc->oformat->video_codec != AV_CODEC_ID_NONE) {
                     if (oc->oformat->video_codec == AV_CODEC_ID_H264 && options.find("preset:v") == options.end()) {
                         options["preset:v"] = "veryfast";
                     }
@@ -610,9 +633,16 @@ struct ffmpeg_consumer : public core::frame_consumer
                 }
 
                 std::optional<Stream> audio_stream;
-                if (oc->oformat->audio_codec != AV_CODEC_ID_NONE) {
+                if (!disable_audio && oc->oformat->audio_codec != AV_CODEC_ID_NONE) {
                     audio_stream.emplace(
                         oc, ":a", oc->oformat->audio_codec, format_desc, realtime_, depth_, options, hw_device_ctx);
+                }
+
+                if (!video_stream && !audio_stream) {
+                    CASPAR_THROW_EXCEPTION(
+                        user_error() << msg_info(
+                            "ffmpeg-consumer has no output streams (both video and audio disabled, "
+                            "or the output format declares no default codecs)"));
                 }
 
                 if (!(oc->oformat->flags & AVFMT_NOFILE)) {
