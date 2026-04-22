@@ -34,12 +34,21 @@ features:
       GPU-accelerated video encoding for FFmpeg stream consumers
       using Intel QSV or VAAPI.
 
-  - name: Unicode fix for CG UPDATE
-    branch: fix/utf8-cg-update
+  - name: FFmpeg Consumer -vn/-an Flags
+    branch: feat/ffmpeg-consumer-vn-an
     enabled: true
     description: >
-      Prevent AMCP channel crash when CG UPDATE contains
-      emoji or other non-ASCII Unicode characters.
+      Allow standalone -vn / -an flags in the FFmpeg consumer to
+      produce audio-only or video-only output streams (e.g. audio-only
+      SRT). Also fixes the argument parser so boolean flags no longer
+      swallow the next option as their value.
+
+  - name: Unicode fix for CG UPDATE
+    branch: fix/utf8-cg-update
+    enabled: false
+    description: >
+      (MERGED)Prevent AMCP channel crash when CG UPDATE contains
+      emoji or other non-ASCII Unicode characters. 
 
 # Files that exist locally but are not stored in git (proprietary binaries).
 # The build script copies these into the Docker build context automatically.
