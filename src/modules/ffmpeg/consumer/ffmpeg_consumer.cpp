@@ -59,6 +59,7 @@ extern "C" {
 #include <libavfilter/buffersrc.h>
 #include <libavformat/avformat.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/samplefmt.h>
@@ -99,7 +100,8 @@ struct Stream
            const core::video_format_desc&      format_desc,
            bool                                realtime,
            common::bit_depth                   depth,
-           std::map<std::string, std::string>& options)
+           std::map<std::string, std::string>& options,
+           AVBufferRef*                        hw_device_ctx = nullptr)
     {
         std::map<std::string, std::string> stream_options;
 
@@ -209,7 +211,12 @@ struct Stream
         if (codec->type == AVMEDIA_TYPE_VIDEO) {
             // TODO codec->profiles
             // TODO codec->supported_framerates
-            sink = create_buffersink(graph.get(), "out", get_supported_pixel_formats(nullptr, codec));
+            if (hw_device_ctx) {
+                const AVPixelFormat sw_pix_fmts[] = {AV_PIX_FMT_NV12};
+                sink                              = create_buffersink(graph.get(), "out", sw_pix_fmts);
+            } else {
+                sink = create_buffersink(graph.get(), "out", get_supported_pixel_formats(nullptr, codec));
+            }
         } else if (codec->type == AVMEDIA_TYPE_AUDIO) {
             // TODO codec->profiles
             sink = create_abuffersink(graph.get(),
@@ -284,6 +291,43 @@ struct Stream
             enc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
         }
 
+        if (hw_device_ctx) {
+            enc->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+        }
+
+        if (hw_device_ctx && codec->type == AVMEDIA_TYPE_VIDEO) {
+            AVPixelFormat hw_pix_fmt = AV_PIX_FMT_NONE;
+#if LIBAVUTIL_VERSION_MAJOR >= 60 // FFmpeg 8
+            const void* pix_fmts        = nullptr;
+            int         nb_pix_fmts     = 0;
+            FF(avcodec_get_supported_config(
+                enc.get(), codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &pix_fmts, &nb_pix_fmts));
+            if (pix_fmts && nb_pix_fmts > 0) {
+                hw_pix_fmt = static_cast<const AVPixelFormat*>(pix_fmts)[0];
+            }
+#else
+            if (codec->pix_fmts) {
+                hw_pix_fmt = codec->pix_fmts[0];
+            }
+#endif
+            if (hw_pix_fmt != AV_PIX_FMT_NONE) {
+                auto hw_frames_ref = av_hwframe_ctx_alloc(hw_device_ctx);
+                if (!hw_frames_ref) {
+                    FF_RET(AVERROR(ENOMEM), "av_hwframe_ctx_alloc");
+                }
+                auto* frames_ctx              = reinterpret_cast<AVHWFramesContext*>(hw_frames_ref->data);
+                frames_ctx->format            = hw_pix_fmt;
+                frames_ctx->sw_format         = AV_PIX_FMT_NV12;
+                frames_ctx->width             = enc->width;
+                frames_ctx->height            = enc->height;
+                frames_ctx->initial_pool_size = 20;
+                FF(av_hwframe_ctx_init(hw_frames_ref));
+                enc->hw_frames_ctx = av_buffer_ref(hw_frames_ref);
+                enc->pix_fmt       = hw_pix_fmt;
+                av_buffer_unref(&hw_frames_ref);
+            }
+        }
+
         auto dict = to_dict(std::move(stream_options));
         CASPAR_SCOPE_EXIT { av_dict_free(&dict); };
         FF(avcodec_open2(enc.get(), codec, &dict));
@@ -336,6 +380,13 @@ struct Stream
                     FF(avcodec_send_frame(enc.get(), nullptr));
                 } else {
                     FF_RET(ret, "av_buffersink_get_frame");
+                    if (enc->hw_frames_ctx && frame->format != enc->pix_fmt) {
+                        auto hw_frame = alloc_frame();
+                        FF(av_hwframe_get_buffer(enc->hw_frames_ctx, hw_frame.get(), 0));
+                        FF(av_hwframe_transfer_data(hw_frame.get(), frame.get(), 0));
+                        hw_frame->pts = frame->pts;
+                        frame         = std::move(hw_frame);
+                    }
                     FF(avcodec_send_frame(enc.get(), frame.get()));
                 }
             } else if (ret == AVERROR_EOF) {
@@ -453,6 +504,26 @@ struct ffmpeg_consumer : public core::frame_consumer
                     }
                 }
 
+                AVBufferRef* hw_device_ctx = nullptr;
+                {
+                    const auto it = options.find("init_hw_device");
+                    if (it != options.end()) {
+                        auto hw_type = av_hwdevice_find_type_by_name(it->second.c_str());
+                        if (hw_type == AV_HWDEVICE_TYPE_NONE) {
+                            CASPAR_THROW_EXCEPTION(ffmpeg_error_t()
+                                                   << msg_info_t("Unknown hardware device type: " + it->second));
+                        }
+                        FF(av_hwdevice_ctx_create(&hw_device_ctx, hw_type, nullptr, nullptr, 0));
+                        CASPAR_LOG(info) << print() << " Initialized hardware device: " << it->second;
+                        options.erase(it);
+                    }
+                }
+                CASPAR_SCOPE_EXIT
+                {
+                    if (hw_device_ctx)
+                        av_buffer_unref(&hw_device_ctx);
+                };
+
                 boost::filesystem::path full_path = path_;
 
                 static boost::regex prot_exp("^.+:.*");
@@ -492,7 +563,8 @@ struct ffmpeg_consumer : public core::frame_consumer
                     if (oc->oformat->video_codec == AV_CODEC_ID_H264 && options.find("preset:v") == options.end()) {
                         options["preset:v"] = "veryfast";
                     }
-                    video_stream.emplace(oc, ":v", oc->oformat->video_codec, format_desc, realtime_, depth_, options);
+                    video_stream.emplace(
+                        oc, ":v", oc->oformat->video_codec, format_desc, realtime_, depth_, options, hw_device_ctx);
 
                     {
                         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -502,7 +574,8 @@ struct ffmpeg_consumer : public core::frame_consumer
 
                 std::optional<Stream> audio_stream;
                 if (oc->oformat->audio_codec != AV_CODEC_ID_NONE) {
-                    audio_stream.emplace(oc, ":a", oc->oformat->audio_codec, format_desc, realtime_, depth_, options);
+                    audio_stream.emplace(
+                        oc, ":a", oc->oformat->audio_codec, format_desc, realtime_, depth_, options, hw_device_ctx);
                 }
 
                 if (!(oc->oformat->flags & AVFMT_NOFILE)) {

@@ -44,6 +44,10 @@ FROM docker.io/ubuntu:noble
 			libglx0 \
 			libegl1 \
 			libgles2 \
+			intel-media-va-driver-non-free \
+			libva2 \
+			libva-drm2 \
+			vainfo \
 			; \
 			rm -rf /var/lib/apt/lists/*
 
