@@ -43,6 +43,13 @@ features:
       SRT). Also fixes the argument parser so boolean flags no longer
       swallow the next option as their value.
 
+  - name: Disable Vulkan Accelerator
+    branch: feature/no-vulkan
+    enabled: true
+    description: >
+      Remove Vulkan SDK download and build flag from Docker image.
+      Keeps the build lean for deployments that only need OpenGL.
+
   - name: Unicode fix for CG UPDATE
     branch: fix/utf8-cg-update
     enabled: false
