@@ -7,19 +7,13 @@ FROM docker.io/buildpack-deps:noble AS build-casparcg
 
 	WORKDIR /build
 
-	RUN wget https://sdk.lunarg.com/sdk/download/1.4.328.1/linux/vulkansdk-linux-x86_64-1.4.328.1.tar.xz
-	RUN tar -xf vulkansdk-linux-x86_64-1.4.328.1.tar.xz && \
-		mv 1.4.328.1 /tmp/vulkan-sdk
-	ENV VULKAN_SDK=/tmp/vulkan-sdk/x86_64
-	ENV PATH=$VULKAN_SDK/bin:$PATH
-
 	COPY ./src /source
 
 	ARG CC
 	ARG CXX
 	ARG GIT_HASH
 
-	RUN cmake -GNinja /source -DUSE_STATIC_BOOST=ON -DUSE_SYSTEM_CEF=OFF -DENABLE_VULKAN=ON
+	RUN cmake -GNinja /source -DUSE_STATIC_BOOST=ON -DUSE_SYSTEM_CEF=OFF
 
 	RUN cmake --build .
 
