@@ -27,12 +27,12 @@ features:
       Channel-level audio processing via libStereoTool, controllable
       with MIXER STEREOTOOL command. Includes A/V sync compensation.
 
-  - name: Hardware Encoding (QSV/VAAPI)
+  - name: Hardware Encoding (QSV/VAAPI/NVENC)
     branch: feature/hw-encoding-support
     enabled: true
     description: >
       GPU-accelerated video encoding for FFmpeg stream consumers
-      using Intel QSV or VAAPI.
+      using Intel QSV, VAAPI or NVIDIA NVENC (-init_hw_device cuda).
 
   - name: FFmpeg Consumer -vn/-an Flags
     branch: feat/ffmpeg-consumer-vn-an
@@ -49,6 +49,14 @@ features:
     description: >
       Remove Vulkan SDK download and build flag from Docker image.
       Keeps the build lean for deployments that only need OpenGL.
+
+  - name: FFmpeg 8.1 with NVENC
+    branch: feature/ffmpeg-8.1
+    enabled: true
+    description: >
+      Build FFmpeg 8.1 from source instead of using Ubuntu's 6.1, with
+      libx264, libx265, NVIDIA NVENC/NVDEC, VAAPI and QSV. Run the image
+      with --gpus all to use h264_nvenc / hevc_nvenc.
 
   - name: Unicode fix for CG UPDATE
     branch: fix/utf8-cg-update
