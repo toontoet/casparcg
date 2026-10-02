@@ -61,6 +61,7 @@ extern "C" {
 #include <libavutil/channel_layout.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/samplefmt.h>
 }
@@ -361,14 +362,22 @@ struct Stream
             int         nb_pix_fmts     = 0;
             FF(avcodec_get_supported_config(
                 enc.get(), codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &pix_fmts, &nb_pix_fmts));
-            if (pix_fmts && nb_pix_fmts > 0) {
-                hw_pix_fmt = static_cast<const AVPixelFormat*>(pix_fmts)[0];
-            }
+            const auto* fmts = static_cast<const AVPixelFormat*>(pix_fmts);
 #else
-            if (codec->pix_fmts) {
-                hw_pix_fmt = codec->pix_fmts[0];
+            const auto* fmts        = codec->pix_fmts;
+            int         nb_pix_fmts = 0;
+            while (fmts && fmts[nb_pix_fmts] != AV_PIX_FMT_NONE) {
+                ++nb_pix_fmts;
             }
 #endif
+            // Encoders such as nvenc and qsv list software formats before their hardware format.
+            for (int i = 0; fmts && i < nb_pix_fmts; ++i) {
+                const auto* desc = av_pix_fmt_desc_get(fmts[i]);
+                if (desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
+                    hw_pix_fmt = fmts[i];
+                    break;
+                }
+            }
             if (hw_pix_fmt != AV_PIX_FMT_NONE) {
                 auto hw_frames_ref = av_hwframe_ctx_alloc(hw_device_ctx);
                 if (!hw_frames_ref) {
@@ -597,7 +606,11 @@ struct ffmpeg_consumer : public core::frame_consumer
 
                 std::optional<Stream> video_stream;
                 if (oc->oformat->video_codec != AV_CODEC_ID_NONE) {
-                    if (oc->oformat->video_codec == AV_CODEC_ID_H264 && options.find("preset:v") == options.end()) {
+                    const auto codec_v_it = options.find("codec:v");
+                    const bool is_libx264 =
+                        codec_v_it == options.end() ? oc->oformat->video_codec == AV_CODEC_ID_H264
+                                                    : codec_v_it->second == "libx264";
+                    if (is_libx264 && options.find("preset:v") == options.end()) {
                         options["preset:v"] = "veryfast";
                     }
                     video_stream.emplace(
