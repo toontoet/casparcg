@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Libraries FFmpeg is built against. Also installed in the CasparCG build
+# stage so copy_deps.sh can bundle their runtime .so files.
+apt-get install -yq --no-install-recommends \
+  nasm \
+  pkg-config \
+  libx264-dev \
+  libx265-dev \
+  libnuma-dev \
+  libva-dev \
+  libdrm-dev \
+  libvpl-dev \
+  libmp3lame-dev \
+  libopus-dev \
+  libvorbis-dev \
+  libvpx-dev \
+  libdav1d-dev \
+  libfreetype-dev \
+  libfontconfig-dev \
+  libfribidi-dev \
+  libharfbuzz-dev \
+  libass-dev \
+  libgnutls28-dev \
+  libsrt-gnutls-dev \
+  libzimg-dev \
+  libsoxr-dev \
+  libxml2-dev
