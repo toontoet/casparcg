@@ -41,4 +41,5 @@ apt-get install -yq --no-install-recommends \
   libatk1.0-dev \
   libatspi2.0-dev \
   libatk-bridge2.0-dev \
+  libxkbcommon-dev \
   libsimde-dev
