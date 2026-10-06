@@ -57,7 +57,13 @@ features:
       Build FFmpeg 8.1 from source instead of using Ubuntu's 6.1, with
       libx264, libx265, NVIDIA NVENC/NVDEC, VAAPI and QSV. Run the image
       with --gpus all to use h264_nvenc / hevc_nvenc.
-
+      
+  - name: shim fix for CEF crash
+    branch: cef_shim_fix
+    enabled: true
+    description: >
+      Fixes random crashes of server caused by illegal memory operations by CEF.
+      
   - name: Unicode fix for CG UPDATE
     branch: fix/utf8-cg-update
     enabled: false
