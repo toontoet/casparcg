@@ -28,6 +28,10 @@ FROM docker.io/buildpack-deps:noble AS build-casparcg
 	# Find a better way to copy deps
 	RUN ln -s /build/staging /staging && \
 		/source/shell/copy_deps.sh /build/shell/casparcg /staging/lib
+	
+	# Compile and copy the mallinfo LD_PRELOAD shim (fixes CEF MemoryInfra SIGILL when arena > 2 GiB; see mallinfo_shim.c and docs/CEF_SIGILL_CRASH.md).
+    RUN gcc -shared -fPIC -O2 -o /staging/lib/libmallinfo_shim.so /source/tools/mallinfo_shim.c
+    # Usage: LD_PRELOAD=../lib/libmallinfo_shim.so <cef-process>
 
 FROM docker.io/ubuntu:noble
 	COPY --from=build-casparcg /staging /opt/casparcg
