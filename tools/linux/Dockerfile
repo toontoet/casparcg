@@ -110,6 +110,7 @@ FROM docker.io/ubuntu:noble
 			libva2 \
 			libva-drm2 \
 			vainfo \
+			telnet \
 			; \
 			rm -rf /var/lib/apt/lists/*
 
