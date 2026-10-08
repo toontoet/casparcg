@@ -22,7 +22,7 @@ features:
 
   - name: StereoTool Audio Processing
     branch: feature/stereotool
-    enabled: true
+    enabled: false
     description: >
       Channel-level audio processing via libStereoTool, controllable
       with MIXER STEREOTOOL command. Includes A/V sync compensation.
