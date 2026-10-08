@@ -106,6 +106,7 @@ FROM docker.io/ubuntu:noble
 			libglx0 \
 			libegl1 \
 			libgles2 \
+                        telnet \
 			; \
 			rm -rf /var/lib/apt/lists/*
 
