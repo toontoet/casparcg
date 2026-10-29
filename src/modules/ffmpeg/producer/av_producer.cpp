@@ -174,7 +174,14 @@ class Decoder
                             packet = std::move(input.front());
                             input.pop();
                         }
-                        FF(avcodec_send_packet(ctx.get(), packet.get()));
+                        ret = avcodec_send_packet(ctx.get(), packet.get());
+                        if (ret == AVERROR_EXIT) {
+                            break;
+                        }
+                        if (ret < 0) {
+                            skip_decode_error(ret, "avcodec_send_packet");
+                            continue;
+                        }
                     } else if (ret == AVERROR_EOF) {
                         avcodec_flush_buffers(ctx.get());
                         av_frame->pts = next_pts;
@@ -186,9 +193,12 @@ class Decoder
                             output_cond.wait(lock, [&]() { return output.size() < output_capacity; });
                             output.push(std::move(av_frame));
                         }
+                    } else if (ret == AVERROR_EXIT) {
+                        break;
+                    } else if (ret < 0) {
+                        skip_decode_error(ret, "avcodec_receive_frame");
+                        continue;
                     } else {
-                        FF_RET(ret, "avcodec_receive_frame");
-
                         // TODO: Maybe Fixed in:
                         // https://github.com/FFmpeg/FFmpeg/commit/33203a08e0a26598cb103508327a1dc184b27bc6
                         // NOTE This is a workaround for DVCPRO HD.
@@ -247,6 +257,23 @@ class Decoder
                 CASPAR_LOG_CURRENT_EXCEPTION();
             }
         });
+    }
+
+    // Recover from a corrupt or otherwise undecodable packet without killing the
+    // decoder thread. Audio codecs (especially AAC) often need a flush to leave a
+    // bad internal state; video codecs typically recover at the next keyframe and
+    // flushing would discard reference frames.
+    void skip_decode_error(int err, const char* func)
+    {
+        char        errbuf[AV_ERROR_MAX_STRING_SIZE] = {};
+        const char* type                             = av_get_media_type_string(ctx->codec_type);
+        av_strerror(err, errbuf, sizeof(errbuf));
+        CASPAR_LOG(warning) << "av_producer[decoder] " << (type ? type : "?") << " " << func << " failed (" << err
+                            << "): " << errbuf << "; skipping packet"
+                            << (ctx->codec_type == AVMEDIA_TYPE_AUDIO ? " and flushing audio decoder" : "");
+        if (ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
+            avcodec_flush_buffers(ctx.get());
+        }
     }
 
     ~Decoder()
