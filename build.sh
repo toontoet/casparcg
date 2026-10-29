@@ -93,13 +93,9 @@ for line in text.split('\n'):
 print('LOCAL_FILES=(' + ' '.join(repr(f) for f in local_files) + ')')
 
 extra_tags = []
-m = re.search(r'extra_tags:\s*\[([^\]]*)\]', text)
+m = re.search(r'extra_tags:\s*\n((?:\s+-\s+\S+[^\n]*\n?)*)', text)
 if m:
-    extra_tags = [t.strip().strip("'\"") for t in m.group(1).split(',') if t.strip()]
-else:
-    m = re.search(r'extra_tags:\s*\n((?:\s+-\s+\S+[^\n]*\n?)*)', text)
-    if m:
-        extra_tags = re.findall(r'-\s+(\S+)', m.group(1))
+    extra_tags = re.findall(r'-\s+(\S+)', m.group(1))
 print('EXTRA_TAGS=(' + ' '.join(repr(t) for t in extra_tags) + ')')
 ")"
 
