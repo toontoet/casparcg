@@ -91,6 +91,16 @@ for line in text.split('\n'):
             break
 
 print('LOCAL_FILES=(' + ' '.join(repr(f) for f in local_files) + ')')
+
+extra_tags = []
+m = re.search(r'extra_tags:\s*\[([^\]]*)\]', text)
+if m:
+    extra_tags = [t.strip().strip("'\"") for t in m.group(1).split(',') if t.strip()]
+else:
+    m = re.search(r'extra_tags:\s*\n((?:\s+-\s+\S+[^\n]*\n?)*)', text)
+    if m:
+        extra_tags = re.findall(r'-\s+(\S+)', m.group(1))
+print('EXTRA_TAGS=(' + ' '.join(repr(t) for t in extra_tags) + ')')
 ")"
 
 eval "$PARSED"
@@ -102,6 +112,9 @@ for i in "${!FEATURE_BRANCHES[@]}"; do
 done
 if [ ${#LOCAL_FILES[@]} -gt 0 ]; then
     echo "  Local files: ${#LOCAL_FILES[@]}"
+fi
+if [ ${#EXTRA_TAGS[@]} -gt 0 ]; then
+    echo "  Extra tags: ${EXTRA_TAGS[*]}"
 fi
 echo ""
 
@@ -185,9 +198,14 @@ FULL_IMAGE="$REGISTRY/$IMAGE"
 
 echo "=== Building Docker image ==="
 echo ""
+TAG_LIST="latest, upstream-$UPSTREAM_SHORT"
+for extra in "${EXTRA_TAGS[@]}"; do
+    TAG_LIST="$TAG_LIST, $extra"
+done
+
 echo "  Image:    $FULL_IMAGE"
 echo "  Platform: $PLATFORM"
-echo "  Tags:     latest, upstream-$UPSTREAM_SHORT"
+echo "  Tags:     $TAG_LIST"
 echo ""
 
 BUILD_ARGS=(
@@ -197,6 +215,9 @@ BUILD_ARGS=(
     -t "$FULL_IMAGE:upstream-$UPSTREAM_SHORT"
     --build-arg "GIT_HASH=$UPSTREAM_SHA"
 )
+for extra in "${EXTRA_TAGS[@]}"; do
+    BUILD_ARGS+=(-t "$FULL_IMAGE:$extra")
+done
 
 if $PUSH; then
     BUILD_ARGS+=(--push)
@@ -214,12 +235,18 @@ echo "=== Build complete ==="
 echo ""
 echo "  $FULL_IMAGE:latest"
 echo "  $FULL_IMAGE:upstream-$UPSTREAM_SHORT"
+for extra in "${EXTRA_TAGS[@]}"; do
+    echo "  $FULL_IMAGE:$extra"
+done
 
 if ! $PUSH; then
     echo ""
     echo "To push manually:"
     echo "  docker push $FULL_IMAGE:latest"
     echo "  docker push $FULL_IMAGE:upstream-$UPSTREAM_SHORT"
+    for extra in "${EXTRA_TAGS[@]}"; do
+        echo "  docker push $FULL_IMAGE:$extra"
+    done
     echo ""
     echo "Or re-run with --push:  ./build.sh --push"
 fi

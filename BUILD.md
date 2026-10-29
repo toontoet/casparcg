@@ -18,10 +18,9 @@ feature branches (enabled) ──┘
 3. Each feature branch marked `enabled: true` is merged on top of upstream
    master (in the order listed).
 4. The merged source is built using `tools/linux/Dockerfile`.
-5. The resulting Docker image is pushed to `ghcr.io/<owner>/casparcg` with two
-   tags:
-   - `latest`
-   - `upstream-<short-sha>` (the upstream master commit the build is based on)
+5. The resulting Docker image is pushed to `ghcr.io/<owner>/casparcg` with
+   `latest`, `upstream-<short-sha>` (the upstream master commit the build is
+   based on), and any extra tags listed under `image.extra_tags` in the config.
 
 ## Configuration
 
@@ -37,6 +36,10 @@ upstream:
 
 fork:
   repo: toontoet/casparcg     # this fork (org/name)
+
+image:
+  extra_tags:                 # optional extra Docker tags (in addition to latest / upstream-<sha>)
+    - audiofix
 
 features:
   - name: Human-readable name
@@ -111,7 +114,7 @@ The script automatically:
 3. Merges each enabled feature branch (in config order)
 4. Copies local-only files (listed under `local_files:` in the config)
 5. Runs `docker buildx build` for `linux/amd64`
-6. Tags the image with `latest` and `upstream-<sha>`
+6. Tags the image with `latest`, `upstream-<sha>`, and any `image.extra_tags`
 7. Cleans up the temporary worktree
 
 ### Local-only files
@@ -216,9 +219,12 @@ git checkout -b test-integration upstream/master
 
 # Merge each enabled branch in config order:
 git merge --no-edit origin/feature/reconnect
-git merge --no-edit origin/feature/stereotool
 git merge --no-edit origin/feature/hw-encoding-support
-git merge --no-edit origin/fix/utf8-cg-update
+git merge --no-edit origin/feat/ffmpeg-consumer-vn-an
+git merge --no-edit origin/feature/ffmpeg-8.1
+git merge --no-edit origin/feature/no-vulkan
+git merge --no-edit origin/cef_shim_fix
+git merge --no-edit origin/fix/ffmpeg-producer-skip-bad-packets
 
 # If all succeed, the integration is clean. Clean up:
 git checkout -
@@ -240,6 +246,14 @@ git branch -D test-integration
 |-----|---------|
 | `latest` | Most recent successful build |
 | `upstream-<sha>` | Based on this specific upstream master commit |
+| extra tags | Optional names from `image.extra_tags` (currently `audiofix`) |
+
+`audiofix` is a stable alias for the custom image that includes the FFmpeg
+producer skip-bad-packets fix:
+
+```bash
+docker pull ghcr.io/toontoet/casparcg:audiofix
+```
 
 ### Pulling the image
 
